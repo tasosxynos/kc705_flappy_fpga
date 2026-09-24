@@ -7,8 +7,10 @@ timing generator, the pixel renderer, the colour palette and the HDMI
 transmitter bring-up are all hand-written.
 
 Video output is **1920x1080@60, 16-bit YCbCr 4:2:2** over the board's ADV7511
-HDMI transmitter. The game itself renders at **640x480 and is displayed once,
-centred**, with black margins.
+HDMI transmitter. The game itself renders at **640x480** and is scaled **2.25x
+uniformly** to fill the full screen height (1440x1080, with 240 px black bars
+left and right, no distortion). The board boots the game standalone from its
+onboard Quad SPI flash — no PC needed.
 
 ---
 
@@ -41,13 +43,26 @@ SYSCLK (200 MHz LVDS)
                            └─ HDMI_D[15:0] ► ADV7511 (U65) ► TMDS ► HDMI
 ```
 
-* The 640x480 game image is placed once in the centre of the 1920x1080 raster
-  (offset 640 columns, 300 lines). Everything outside the window is forced to
-  video black, so the game never tiles or scrolls past its own screen.
+* The 640x480 game image is scaled **2.25x uniformly** into the 1920x1080
+  raster: 1440x1080 centred pixels with a 240 px black bar on each side.
+  Everything outside the image window is forced to video black, so the game
+  never tiles or scrolls past its own screen.
 * Over the 16 data lines, **the upper byte carries luma and the lower byte
   carries chroma** (`HDMI_D[15:8]` = Y, `HDMI_D[7:0]` = Cb/Cr), matching the
   KC705 schematic's wiring into the transmitter's `D[23:8]`.
 * Pin assignments are taken from the KC705 documentation (UG810) HDMI pin table.
+
+### Why the 2.25x scaler is a lookup table
+
+The screen→game coordinate map is `n*4/9`. Implemented as arithmetic it does
+not close timing: a divider missed the 148.5 MHz pixel clock by ~3.2 ns and a
+DSP48 multiplier by about the same amount, because the renderer + palette +
+packer chain is combinational and already consumes nearly the whole 6.7 ns
+budget. The final design answers the map from two
+`(* rom_style = "distributed" *)` ROM tables (1440 and 1080 entries) in ~2
+logic levels instead of 20. The horizontal table maps in-window columns to
+game x (0..639); the vertical one maps raster lines to game y (0..479, last
+line clamped).
 
 ---
 
@@ -126,6 +141,16 @@ same 5x7 glyph font as the rest of the text. There is no frame buffer and no
 memory of the screen anywhere in the design: every pixel is computed on the fly
 from the current game state as the beam passes.
 
+### High score
+
+A best score is kept in three more 4-bit BCD registers (`hi_h`, `hi_t`, `hi_o`)
+and shown as `HI nnn` on the title and game-over screens, aligned with the
+score row. It latches whenever the live score exceeds it and is deliberately
+**not cleared by the start/restart paths**, so it survives every game restart.
+Like the score it is made of flip-flops, so a power cycle or bitstream reload
+clears it — persisting it across power cycles would require the running design
+to write its own configuration flash.
+
 ---
 
 ## Resource usage
@@ -134,14 +159,14 @@ From the implementation report (`xc7k325tffg900-2`):
 
 | Resource | Used | Available | % |
 |---|---|---|---|
-| Slice LUTs | 1,161 | 203,800 | 0.57 |
-| Slice Registers | 470 | 407,600 | 0.12 |
+| Slice LUTs | 1,429 | 203,800 | 0.70 |
+| Slice Registers | 487 | 407,600 | 0.12 |
 | Block RAM Tiles | 0.5 | 445 | 0.11 |
 | DSPs | 0 | 840 | 0.00 |
 | Bonded IOBs | 36 | 500 | 7.20 |
 
 That single half block-RAM tile is used by one of the read-only graphics
-tables; the entire game state is in registers.
+tables; the scaling ROMs and the entire game state live in LUTs and flip-flops.
 
 ---
 
@@ -149,13 +174,13 @@ tables; the entire game state is in registers.
 
 ```
 rtl/
-  kc705_flappy_top.v   top level: clocking, video pipeline, I2C wiring, LEDs
+  kc705_flappy_top.v   top level: clocking, video pipeline + scaler, I2C, LEDs
   video_timing.v       1920x1080@60 sync generator
   render_flappy.v      combinational 640x480 pixel generator
   gfx_roms.v           sprite / glyph / hill data (generated)
   gfx_palette          (inside gfx_roms.v) 5-bit index -> YCbCr
   ycbcr422_pack.v      16-bit YCbCr 4:2:2 packer
-  game_flappy.v        game logic (states, physics, pipes, score)
+  game_flappy.v        game logic (states, physics, pipes, score, high score)
   btn_input.v          button debounce + press pulse
   i2c_master.v         hand-written I2C master
   adv7511_init.v       49-step transmitter power-up sequence
@@ -168,7 +193,7 @@ sim/
   tb_btn_polarity.v    button polarity
 tools/
   gen_gfx.py           sprite/glyph tables -> gfx_roms.v
-build.tcl              Vivado non-project build
+build.tcl              Vivado non-project build (bitstream + QSPI flash image)
 sim.tcl                simulation run
 kc705_flappy.xdc       pin + timing constraints
 ```
@@ -184,14 +209,42 @@ vivado -mode batch -source build.tcl
 ```
 
 The resulting bitstream is `build/kc705_flappy.runs/impl_1/kc705_flappy_top.bit`.
+The same build also produces **`kc705_flappy.bin`**, the Quad SPI flash image
+(`write_cfgmem -interface SPIx4`). The XDC sets
+`BITSTREAM.CONFIG.SPI_BUSWIDTH 4` so the generated bitstream matches the
+board's x4 flash wiring.
 
 ## Programming
 
-With `openFPGALoader`:
+### Over JTAG (volatile — gone at power-off)
 
 ```sh
 openFPGALoader -b kc705 kc705_flappy_top.bit
 ```
+
+### Boot standalone from the onboard Quad SPI flash
+
+The KC705's SD card slot cannot boot a bitstream (it is wired to FPGA user
+I/O, not to the configuration logic), so no-PC boot uses the onboard SPI
+flash. Write the flash image once:
+
+```sh
+openFPGALoader -b kc705 -f --fpga-part xc7k325tffg900 kc705_flappy.bin
+```
+
+then set **SW13 for Master SPI — `M[2:0] = 001` (position 3 OFF, position 4
+OFF, position 5 ON)** and power-cycle. The FPGA configures itself from the
+flash in about two seconds and the game is up — no JTAG, no PC.
+
+* JTAG programming works in any SW13 position, so a board already switched to
+  001 can still be flashed over JTAG.
+* `--fpga-part` is required for a raw `.bin`: it selects openFPGALoader's
+  `spiOverJtag` helper design. If you run openFPGALoader from an unpacked
+  tarball under your home directory, it looks for that helper under
+  `/usr/local/share/openFPGALoader/`; bind-mount the tarball's
+  `usr/local/share` over that path for the run (`unshare -rm` suffices — no
+  root needed).
+* A power cycle clears the high score, since it lives in flip-flops. Expected.
 
 ---
 
