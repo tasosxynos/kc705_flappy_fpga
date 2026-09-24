@@ -1,0 +1,21 @@
+# Vivado / Xilinx build products
+.Xil/
+build/
+*.jou
+*.log
+*.str
+*.pb
+*.rpx
+*.dcp
+*.bit
+*.bin
+*.ltx
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+*~
+*.swp
