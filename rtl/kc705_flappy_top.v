@@ -121,6 +121,7 @@ module kc705_flappy_top (
     wire [1:0]  state, bird_frame;
     wire [9:0]  bird_y, pipe_x0, pipe_x1, pipe_x2, gap0, gap1, gap2, scroll;
     wire [3:0]  score_h, score_t, score_o;
+    wire [3:0]  hi_h, hi_t, hi_o;      // high score digits (undeclared here = 1-bit implicit net -> only bit 0 reached the renderer)
     wire        show_score;
 
     game_flappy u_game (
