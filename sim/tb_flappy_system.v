@@ -53,12 +53,14 @@ module tb_flappy_system;
     wire [1:0] state, bird_frame;
     wire [9:0] bird_y, px0, px1, px2, gap0, gap1, gap2, scroll;
     wire [3:0] score_h, score_t, score_o;
+    wire [3:0] hi_h, hi_t, hi_o;
     wire       show_score;
 
     game_flappy u_game (
         .clk(clk), .rst(rst), .tick(tick), .flap(flap),
         .state(state), .bird_y(bird_y), .bird_frame(bird_frame),
         .score_h(score_h), .score_t(score_t), .score_o(score_o),
+        .hi_h(hi_h), .hi_t(hi_t), .hi_o(hi_o),
         .show_score(show_score),
         .pipe_x0(px0), .pipe_x1(px1), .pipe_x2(px2),
         .gap0(gap0), .gap1(gap1), .gap2(gap2),
@@ -70,6 +72,7 @@ module tb_flappy_system;
         .x(hcnt), .y(vcnt),
         .state(state), .bird_y(bird_y), .bird_frame(bird_frame),
         .score_h(score_h), .score_t(score_t), .score_o(score_o),
+        .hi_h(hi_h), .hi_t(hi_t), .hi_o(hi_o),
         .show_score(show_score),
         .pipe_x0(px0), .pipe_x1(px1), .pipe_x2(px2),
         .gap0(gap0), .gap1(gap1), .gap2(gap2),

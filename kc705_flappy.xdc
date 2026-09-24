@@ -103,6 +103,10 @@ set_property PULLTYPE PULLUP [get_ports {IIC_SCL_MAIN IIC_SDA_MAIN}]
 # ------------------------------------------------------------------- config
 set_property CFGBVS VCCO [current_design]
 set_property CONFIG_VOLTAGE 2.5 [current_design]
+# The board's Quad SPI flash is wired x4; the bitstream must be generated with
+# that bus width or write_cfgmem cannot build the flash image for it.  JTAG
+# configuration is unaffected by this setting.
+set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
 
 # ---------------------------------------------------------- asynchronous I/O
 # The pushbutton and the I2C data line are sampled by synchronisers / a slow

@@ -128,24 +128,41 @@ module kc705_flappy_top (
         .tick(frame_tick), .flap(flap),
         .state(state), .bird_y(bird_y), .bird_frame(bird_frame),
         .score_h(score_h), .score_t(score_t), .score_o(score_o),
+        .hi_h(hi_h), .hi_t(hi_t), .hi_o(hi_o),
         .show_score(show_score),
         .pipe_x0(pipe_x0), .pipe_x1(pipe_x1), .pipe_x2(pipe_x2),
         .gap0(gap0), .gap1(gap1), .gap2(gap2),
         .scroll(scroll)
     );
 
-    // ------------------------------------------------- game window (640x480)
-    // render_flappy draws in its native 640x480 space.  Place that image once,
-    // centred in the 1920x1080 raster: the window is offset by (1920-640)/2 =
-    // 640 columns and (1080-480)/2 = 300 lines, and everything outside it is
-    // forced to video black (Y=16, Cb=Cr=128) instead of letting the 640-wide
-    // layout tile across the line.
-    localparam [11:0] WIN_X0 = 12'd640;
-    localparam [11:0] WIN_Y0 = 12'd300;
-    wire       in_window = (hcnt >= WIN_X0) && (hcnt < WIN_X0 + 12'd640) &&
-                           (vcnt >= WIN_Y0) && (vcnt < WIN_Y0 + 12'd480);
-    wire [9:0] gx = hcnt[10:0] - 11'd640;      // game x, 0..639 inside the window
-    wire [9:0] gy = vcnt[10:0] - 11'd300;      // game y, 0..479 inside the window
+    // ------------------------------------------------- 1080p fill (2.25x scale)
+    // render_flappy draws in its native 640x480 space.  Scale that image 2.25x
+    // uniformly so it fills the full height of the 1920x1080 raster: it covers
+    // columns 240..1679 (240 px black bars left and right) and all 1080 lines.
+    // Screen coordinate -> game coordinate is (coord * 4) / 9.
+    wire       in_window = (hcnt >= 12'd240) && (hcnt < 12'd1680);
+    // Scale by 4/9 (the 2.25x) with distributed-ROM lookup tables.  Arithmetic
+    // is the wrong tool here: a divider missed the pixel clock by 3.2 ns and a
+    // DSP48 multiplier by the same amount, because the renderer+palette+packer
+    // chain already consumes nearly the whole 6.73 ns budget.  An async LUT ROM
+    // costs ~2 levels instead of 20.
+    wire [11:0] sxc = hcnt[11:0] - 12'd240;             // 0..1439 inside the image
+
+    (* rom_style = "distributed" *)
+    reg [9:0] gx_map [0:1439];
+    (* rom_style = "distributed" *)
+    reg [9:0] gy_map [0:1079];
+    integer mi;
+    initial begin
+        for (mi = 0; mi < 1440; mi = mi + 1)
+            gx_map[mi] = (mi * 4) / 9;                  // 0..639
+        for (mi = 0; mi < 1080; mi = mi + 1)
+            gy_map[mi] = (mi * 4) / 9;                  // 0..479 (1080 -> 480, clamped below)
+    end
+
+    wire [9:0] gx   = gx_map[sxc];
+    wire [9:0] gy_r = gy_map[vcnt[10:0]];
+    wire [9:0] gy   = (gy_r > 10'd479) ? 10'd479 : gy_r;   // clamp the last line
 
     // ------------------------------------------------------------------ render
     wire [4:0] pidx;
@@ -153,6 +170,7 @@ module kc705_flappy_top (
         .x(gx), .y(gy),
         .state(state), .bird_y(bird_y), .bird_frame(bird_frame),
         .score_h(score_h), .score_t(score_t), .score_o(score_o),
+        .hi_h(hi_h), .hi_t(hi_t), .hi_o(hi_o),
         .show_score(show_score),
         .pipe_x0(pipe_x0), .pipe_x1(pipe_x1), .pipe_x2(pipe_x2),
         .gap0(gap0), .gap1(gap1), .gap2(gap2),

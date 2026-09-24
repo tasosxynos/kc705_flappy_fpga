@@ -27,6 +27,9 @@ module game_flappy (
     output reg  [3:0]  score_h,     // hundreds
     output reg  [3:0]  score_t,     // tens
     output reg  [3:0]  score_o,     // ones
+    output reg  [3:0]  hi_h,        // best score this power session, hundreds
+    output reg  [3:0]  hi_t,        // ... tens
+    output reg  [3:0]  hi_o,        // ... ones
     output wire        show_score,
     output reg  [9:0]  pipe_x0, pipe_x1, pipe_x2,   // left edge, 0..959
     output reg  [9:0]  gap0, gap1, gap2,            // gap top edge
@@ -116,6 +119,24 @@ module game_flappy (
     wire pass0 = !scored[0] && (p0_r < bl);
     wire pass1 = !scored[1] && (p1_r < bl);
     wire pass2 = !scored[2] && (p2_r < bl);
+    wire pass  = pass0 || pass1 || pass2;   // at most one pipe can pass per frame
+
+    // ------------------------------------------------------------- high score
+    // The next score value is computed combinationally, then compared against
+    // the stored best.  The high score is deliberately NOT cleared by the
+    // start/restart paths -- it only ever moves up, so it survives every game
+    // restart and is lost only on power-off or bitstream reload.
+    wire [3:0] so_nxt = !pass ? score_o :
+                        (score_o == 4'd9) ? 4'd0 : (score_o + 4'd1);
+    wire       ct     = pass && (score_o == 4'd9);
+    wire [3:0] st_nxt = !ct ? score_t :
+                        (score_t == 4'd9) ? 4'd0 : (score_t + 4'd1);
+    wire       ch     = ct && (score_t == 4'd9);
+    wire [3:0] sh_nxt = (ch && (score_h != 4'd9)) ? (score_h + 4'd1) : score_h;
+
+    wire [11:0] score_nxt = {sh_nxt, st_nxt, so_nxt};
+    wire [11:0] hi_cur    = {hi_h, hi_t, hi_o};
+    wire [11:0] hi_nxt    = (score_nxt > hi_cur) ? score_nxt : hi_cur;
 
     // ------------------------------------------------------------------------
     always @(posedge clk) begin
@@ -127,6 +148,9 @@ module game_flappy (
             score_h     <= 4'd0;
             score_t     <= 4'd0;
             score_o     <= 4'd0;
+            hi_h        <= 4'd0;
+            hi_t        <= 4'd0;
+            hi_o        <= 4'd0;
             pipe_x0     <= 10'd250;
             pipe_x1     <= 10'd570;
             pipe_x2     <= 10'd890;
@@ -198,19 +222,14 @@ module game_flappy (
                     if (w1) gap1 <= rnd_gap;
                     if (w2) gap2 <= rnd_gap;
 
-                    // ---- scoring ----
-                    if (pass0 || pass1 || pass2) begin
-                        if (score_o == 4'd9) begin
-                            score_o <= 4'd0;
-                            if (score_t == 4'd9) begin
-                                score_t <= 4'd0;
-                                if (score_h != 4'd9) score_h <= score_h + 4'd1;
-                            end else begin
-                                score_t <= score_t + 4'd1;
-                            end
-                        end else begin
-                            score_o <= score_o + 4'd1;
-                        end
+                    // ---- scoring + high score ----
+                    if (pass) begin
+                        score_o <= so_nxt;
+                        score_t <= st_nxt;
+                        score_h <= sh_nxt;
+                        hi_h    <= hi_nxt[11:8];
+                        hi_t    <= hi_nxt[7:4];
+                        hi_o    <= hi_nxt[3:0];
                     end
                     if (pass0) scored[0] <= 1'b1;
                     if (pass1) scored[1] <= 1'b1;

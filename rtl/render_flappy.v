@@ -24,6 +24,7 @@ module render_flappy (
     input  wire [9:0]  bird_y,
     input  wire [1:0]  bird_frame,
     input  wire [3:0]  score_h, score_t, score_o,
+    input  wire [3:0]  hi_h, hi_t, hi_o,
     input  wire        show_score,
     input  wire [9:0]  pipe_x0, pipe_x1, pipe_x2,
     input  wire [9:0]  gap0, gap1, gap2,
@@ -242,11 +243,41 @@ module render_flappy (
     wire [4:0]  b_c = (b_pix == 3'd1) ? P_BLACK  : (b_pix == 3'd2) ? P_BIRD_Y :
                       (b_pix == 3'd3) ? P_BIRD_O : (b_pix == 3'd4) ? P_WHITE : P_BEAK_DK;
 
+    // ---------------------------------------------------------- 8. high score
+    //  "HI nnn" on the title and game-over screens, using the same 21-px cell
+    //  metrics as the score row so its digits sit directly above the score's.
+    //  Labels occupy three cells (H, I, space), then the three best digits.
+    localparam [9:0] HI_X0 = 10'd228;
+    localparam [9:0] HI_Y0 = 10'd270;
+
+    wire        hi_v     = (y >= HI_Y0) && (y < (HI_Y0 + 10'd21));
+    wire [9:0]  hidx     = x - HI_X0;
+    wire [2:0]  hi_sel   = (hidx >= 10'd105) ? 3'd5 : (hidx >= 10'd84) ? 3'd4 :
+                           (hidx >= 10'd63)  ? 3'd3 : (hidx >= 10'd42) ? 3'd2 :
+                           (hidx >= 10'd21)  ? 3'd1 : 3'd0;
+    // cell offset = hi_sel * 21, as a shift-add instead of a DSP multiply: this
+    // sits on the same pixel path as the renderer and a multiply costs ~2.8 ns
+    wire [9:0]  hi_off   = {3'b0, hi_sel, 4'b0} + {3'b0, hi_sel, 2'b0} + {7'b0, hi_sel};
+    wire [9:0]  hi_tx    = hidx - hi_off;
+    wire [2:0]  hi_col   = div3(hi_tx);
+    wire [2:0]  hi_row   = div3(y - HI_Y0);
+    wire [5:0]  hi_glyph = (hi_sel == 3'd0) ? 6'd8 :                     // 'H'
+                           (hi_sel == 3'd1) ? 6'd9 :                     // 'I'
+                           (hi_sel == 3'd2) ? 6'd0 :                     // ' '
+                           (hi_sel == 3'd3) ? (6'd27 + {2'b00, hi_h}) :
+                           (hi_sel == 3'd4) ? (6'd27 + {2'b00, hi_t}) :
+                                              (6'd27 + {2'b00, hi_o});
+    wire        hi_pix;
+    gfx_font u_font_hi (.glyph(hi_glyph), .px(hi_col), .py(hi_row), .pix(hi_pix));
+    wire        hi_on = txt_act && hi_v && (hidx < 10'd126) &&
+                        (hi_tx < 10'd15) && (hi_col <= 3'd4);
+
     // ------------------------------------------------------------ priority
     always @* begin
         if      (b_lit)     pidx = b_c;
         else if (t_on)      pidx = t_c;
         else if (sc_on && sc_pix) pidx = P_TXT;
+        else if (hi_on && hi_pix) pidx = P_TXT;
         else if (p0_on)     pidx = p0_c;
         else if (p1_on)     pidx = p1_c;
         else if (p2_on)     pidx = p2_c;

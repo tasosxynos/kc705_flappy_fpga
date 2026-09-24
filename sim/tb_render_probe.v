@@ -20,6 +20,7 @@ module tb_render_probe;
     reg  [9:0] bird_y     = 10'd176;
     reg  [1:0] bird_frame = 2'd0;
     reg  [3:0] score_h = 4'd0, score_t = 4'd0, score_o = 4'd1;
+    reg  [3:0] hi_h = 4'd0, hi_t = 4'd2, hi_o = 4'd7;
     reg        show_score = 1'b1;
     reg  [9:0] pipe_x0 = 10'd22, pipe_x1 = 10'd342, pipe_x2 = 10'd662;
     reg  [9:0] gap0    = 10'd90, gap1    = 10'd150, gap2    = 10'd120;
@@ -30,6 +31,7 @@ module tb_render_probe;
         .x(x), .y(y),
         .state(state), .bird_y(bird_y), .bird_frame(bird_frame),
         .score_h(score_h), .score_t(score_t), .score_o(score_o),
+        .hi_h(hi_h), .hi_t(hi_t), .hi_o(hi_o),
         .show_score(show_score),
         .pipe_x0(pipe_x0), .pipe_x1(pipe_x1), .pipe_x2(pipe_x2),
         .gap0(gap0), .gap1(gap1), .gap2(gap2),

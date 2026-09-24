@@ -79,6 +79,11 @@ puts "==> synthesis critical warnings: $ncrit (see reports/synth_critical_warnin
 
 # -------------------------------------------------------- implementation
 puts "==> launching implementation + bitstream"
+# The pixel path is route-dominated (hcnt -> renderer -> packer spans a lot of
+# the die once the scaling ROMs exist), so ask for an effort level that spends
+# real time on placement; default effort leaves ~1 ns on the table.
+set_property STEPS.place_design.ARGS.DIRECTIVE Explore [get_runs impl_1]
+set_property STEPS.post_route_phys_opt_design.IS_ENABLED 1 [get_runs impl_1]
 launch_runs impl_1 -to_step write_bitstream -jobs $jobs
 wait_on_run impl_1
 
@@ -113,6 +118,16 @@ puts "=============================================================="
 
 set bitfile [glob -nocomplain $proj_dir/$proj_name.runs/impl_1/*.bit]
 puts "==> bitstream: $bitfile"
+
+# ------------------------------------------------- flash image for QSPI boot
+# The KC705 boots from its onboard Quad SPI flash in Master SPI mode
+# (SW13 M[2:0] = 001).  Note it CANNOT boot from the SD card slot: that
+# connector is wired to FPGA user I/O, not to the configuration logic, so an
+# SD card can only be used by logic inside the design.
+set binfile "$script_dir/$proj_name.bin"
+write_cfgmem -format BIN -interface SPIx4 -size 16 \
+             -loadbit "up 0x0 $bitfile" -force $binfile
+puts "==> flash image (QSPI): $binfile"
 
 set rf [open "$script_dir/reports/summary.txt" w]
 puts $rf "part          : $part_name"
